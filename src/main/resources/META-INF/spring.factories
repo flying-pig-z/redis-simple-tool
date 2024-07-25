@@ -1,2 +1,4 @@
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-  com.flyingpig.redisutil.config.CacheUtilAutoConfiguration
+  com.flyingpig.redisutil.config.CacheUtilAutoConfiguration,\
+  com.flyingpig.redisutil.config.LockAutoConfiguration,\
+  com.flyingpig.redisutil.config.RateLimiterAutoConfiguration

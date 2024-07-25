@@ -14,19 +14,19 @@ public final class LuaScriptSelector {
 
     public static DefaultRedisScript<Boolean> getFixedWindowRateLimiterScript() {
         redisScript.setResultType(Boolean.class);
-        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/fix_window_limit.lua")));
+        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/limit/fix_window_limit.lua")));
         return redisScript;
     }
 
     public static DefaultRedisScript<Boolean> getSlideWindowRateLimiterScript() {
         redisScript.setResultType(Boolean.class);
-        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/slide_window_limit.lua")));
+        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/limit/slide_window_limit.lua")));
         return redisScript;
     }
 
     public static DefaultRedisScript<Boolean> getTokenBucketRateLimiterScript() {
         redisScript.setResultType(Boolean.class);
-        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/token_bucket_limit.lua")));
+        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/limit/token_bucket_limit.lua")));
         return redisScript;
     }
 }

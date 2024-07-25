@@ -1,23 +1,22 @@
-package com.flyingpig.redisutil.lock;
+package com.flyingpig.redisutil.lock.simpleLock;
 
-import org.redisson.api.RedissonClient;
+import com.flyingpig.redisutil.lock.Lock;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 
-import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-public class SimpleRedisLock implements Lock {
+/*
+    第二版：加入UUID与原来的线程ID共同作为线程标识，
+    让不同线程取得相同锁的概率大大降低，防止并发情况下锁的误删行为。
+ */
+public class SimpleRedisLockV2 implements Lock {
 
     @Autowired
     StringRedisTemplate stringRedisTemplate;
 
-    @Autowired
-    RedissonClient redissonClient;
-
+    // 线程标识
     private static final String ID_PREFIX = UUID.randomUUID() + "-";
 
     @Override
@@ -30,22 +29,17 @@ public class SimpleRedisLock implements Lock {
                 stringRedisTemplate.opsForValue().setIfAbsent(lockKey, threadId, timeoutSec, TimeUnit.SECONDS));
     }
 
-    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
-
-    static {
-        UNLOCK_SCRIPT = new DefaultRedisScript<>();
-        UNLOCK_SCRIPT.setLocation(new ClassPathResource("unlock.lua"));
-        UNLOCK_SCRIPT.setResultType(Long.class);
-    }
-
     @Override
     public void unlock(String lockKey) {
-        // 调用lua脚本
-        stringRedisTemplate.execute(
-                UNLOCK_SCRIPT,
-                Collections.singletonList(lockKey),
-                ID_PREFIX + Thread.currentThread().getId());
+        // 获取线程标示
+        String threadId = ID_PREFIX + Thread.currentThread().getId();
+        // 获取锁中的标示
+        String id = stringRedisTemplate.opsForValue().get(lockKey);
+        // 判断标示是否一致
+        if(threadId.equals(id)) {
+            // 释放锁
+            stringRedisTemplate.delete(lockKey);
+        }
     }
-
 
 }
