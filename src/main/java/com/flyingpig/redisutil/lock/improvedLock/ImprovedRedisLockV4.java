@@ -20,6 +20,7 @@ import java.util.concurrent.*;
 /*
     增加看门狗实现自动续期的功能
  */
+
 @Component
 public class ImprovedRedisLockV4 implements Lock {
 
@@ -31,11 +32,10 @@ public class ImprovedRedisLockV4 implements Lock {
     private static final DefaultRedisScript<Long> tryLockScript = new DefaultRedisScript<>();
     private static final DefaultRedisScript<Long> unlockScript = new DefaultRedisScript<>();
 
-    private static final long RETRY_INTERVAL_MS = 100;
     private static final int MAX_RETRY_TIMES = 3;
 
-    // 定时任务执行间隔（秒）
-    private static final long WATCHDOG_INTERVAL_SEC = 10;
+    // 定时任务执行间隔（秒），由锁超时决定
+    private long watchdogIntervalSec = 5;
 
     // 共享的 ScheduledExecutorService
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
@@ -48,7 +48,6 @@ public class ImprovedRedisLockV4 implements Lock {
 
     @PostConstruct
     public void init() {
-        // 初始化 Lua 脚本
         try {
             String tryLockScriptContent = new String(Files.readAllBytes(Paths.get(new ClassPathResource("scripts/reentrant-lock/tryLock.lua").getURI())));
             tryLockScript.setScriptText(tryLockScriptContent);
@@ -67,11 +66,16 @@ public class ImprovedRedisLockV4 implements Lock {
         String threadId = ID_PREFIX + Thread.currentThread().getId();
         long end = System.currentTimeMillis() + timeoutSec * 1000;
         int retries = 0;
+
+        // 动态调整重试间隔和看门狗间隔
+        long retryInterval = timeoutSec * 1000 / 10;
+        long watchdogInterval = timeoutSec / 2;
+
         while (true) {
             Long result = stringRedisTemplate.execute(tryLockScript, Collections.singletonList(lockKey), String.valueOf(timeoutSec * 1000), threadId);
             if (result != null && result == 1) {
                 lockCounts.merge(threadId, 1, Integer::sum);
-                startWatchdog(lockKey, timeoutSec); // 启动看门狗
+                startWatchdog(lockKey, watchdogInterval);
                 return true;
             }
             if (System.currentTimeMillis() >= end || retries >= MAX_RETRY_TIMES) {
@@ -79,7 +83,7 @@ public class ImprovedRedisLockV4 implements Lock {
             }
             retries++;
             try {
-                Thread.sleep(RETRY_INTERVAL_MS);
+                Thread.sleep(retryInterval);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
@@ -93,7 +97,7 @@ public class ImprovedRedisLockV4 implements Lock {
         lockCounts.computeIfPresent(threadId, (key, count) -> {
             if (count == 1) {
                 stringRedisTemplate.execute(unlockScript, Collections.singletonList(lockKey), threadId);
-                stopWatchdog(lockKey); // 停止看门狗
+                stopWatchdog(lockKey);
                 return null; // 删除这个线程的记录
             }
             return count - 1;
@@ -101,14 +105,14 @@ public class ImprovedRedisLockV4 implements Lock {
     }
 
     // 启动看门狗
-    private void startWatchdog(String lockKey, long timeoutSec) {
+    private void startWatchdog(String lockKey, long watchdogIntervalSec) {
         ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
             String threadId = ID_PREFIX + Thread.currentThread().getId();
-            Long result = stringRedisTemplate.execute(tryLockScript, Collections.singletonList(lockKey), String.valueOf(timeoutSec * 1000), threadId);
+            Long result = stringRedisTemplate.execute(tryLockScript, Collections.singletonList(lockKey), String.valueOf(watchdogIntervalSec * 1000), threadId);
             if (result == null || result != 1) {
-                stopWatchdog(lockKey); // 停止看门狗
+                stopWatchdog(lockKey);
             }
-        }, WATCHDOG_INTERVAL_SEC, WATCHDOG_INTERVAL_SEC, TimeUnit.SECONDS);
+        }, watchdogIntervalSec, watchdogIntervalSec, TimeUnit.SECONDS);
         watchdogTasks.put(lockKey, future);
     }
 
@@ -120,4 +124,5 @@ public class ImprovedRedisLockV4 implements Lock {
         }
     }
 }
+
 
